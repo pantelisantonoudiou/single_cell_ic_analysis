@@ -45,19 +45,20 @@ def apply_thresholds_to_stim_index(event_index_path, threshold_df, output_path):
 
 
 if __name__ == '__main__':
-
     ### ----------- USER SETTINGS ------------- ###
     main_path = r"R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys"
     stim_event_index_file = 'index.csv'
-    output_file = 'index_verified.csv'
     data_ch = 0
     default_threshold = 30
     ### ---------------------------------------- ###
 
-    # Load full stim index
-    stim_df = pd.read_csv(os.path.join(main_path, stim_event_index_file))
+    # Full path to the index file
+    index_path = os.path.join(main_path, stim_event_index_file)
 
-    # Prepare GUI DataFrame (one io row per file)
+    # Load full stim index
+    stim_df = pd.read_csv(index_path)
+
+    # Prepare GUI DataFrame: one 'io' row per file
     io_first = (
         stim_df[stim_df['stim_type'] == 'io']
         .sort_values(['file_name', 'block', 'start_sample'])
@@ -76,14 +77,11 @@ if __name__ == '__main__':
     plt.show()
     verified_df = gui.get_result()
 
-    # Extract verified thresholds
-    threshold_df = verified_df[['file_name', 'threshold']].drop_duplicates()
+    # Use verified results to update full stim_df
+    update_cols = verified_df[['file_name', 'threshold', 'accepted']].drop_duplicates()
+    enriched_df = stim_df.merge(update_cols, on='file_name', how='left')
 
-    # Merge thresholds into full stim index
-    enriched_df = stim_df.merge(threshold_df, on='file_name', how='left')
-
-    # Save enriched index to file
-    output_path = os.path.join(main_path, output_file)
-    enriched_df.to_csv(output_path, index=False)
+    # Overwrite the original index file
+    enriched_df.to_csv(index_path, index=False)
     print(f"\n🎉 Threshold annotation complete. Total rows: {len(enriched_df)}")
-    print(f"✅ Saved to: {output_path}")
+    print(f"✅ Saved updated index with threshold + acceptance to: {index_path}")

@@ -3,7 +3,7 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from PyQt5 import QtCore
+from PyQt5 import QtCore, QtWidgets
 import matplotlib
 import adi
 from scipy.signal import find_peaks
@@ -14,26 +14,25 @@ matplotlib.rcParams.update({'font.size': 20})
 
 class matplotGui:
     """
-    Interactive Matplotlib GUI to verify spike detection thresholds from ADI files.
+    Interactive Matplotlib GUI to verify spike detection thresholds in ADI files.
 
-    This class walks through individual stimulation events (e.g., 'io' blocks),
-    allowing the user to visually verify and adjust the spike detection threshold
-    (prominence) per recording file.
+    Walks through individual stimulation events, allowing the user to visually
+    adjust and accept/reject spike prominence thresholds per file.
 
     Parameters
     ----------
     index_df : pd.DataFrame
-        DataFrame containing at least the following columns:
+        DataFrame containing:
         ['full_path', 'file_name', 'stim_type', 'block', 'start_sample', 'stop_sample'].
     data_ch : int
-        Index of the ADI voltage channel to load for plotting.
+        ADI channel index for Vm data.
     prominence : float
-        Default spike detection prominence value.
+        Default spike prominence threshold.
 
     Attributes
     ----------
     result_df : pd.DataFrame
-        Populated after GUI is closed. Contains 'file_name', 'threshold', and 'accepted'.
+        DataFrame with updated 'threshold' and 'accepted' values after GUI closes.
     """
 
     ind = 0  # internal counter
@@ -41,7 +40,9 @@ class matplotGui:
     def __init__(self, index_df, data_ch=0, prominence=30):
         self.index_df = index_df.copy()
         self.data_ch = data_ch
-        self.result_df = None  # will be assigned after GUI ends
+        self.result_df = None
+        self.wait_time = 0.05
+        self.bcg_color = {-1: 'w', 0: 'salmon', 1: 'palegreen'}
 
         # Initialize columns
         if 'accepted' not in self.index_df.columns:
@@ -50,37 +51,39 @@ class matplotGui:
         else:
             self.index_df['threshold'] = prominence
 
-        self.wait_time = 0.05
-        self.bcg_color = {-1: 'w', 0: 'salmon', 1: 'palegreen'}
+        # Set up Qt blocking loop
+        self.app = QtWidgets.QApplication.instance()
+        if self.app is None:
+            self.app = QtWidgets.QApplication([])
 
-        # Initialize plot
+        # Setup figure
         self.fig, self.axs = plt.subplots(1, 1, figsize=(25, 15))
         self.axs.spines["top"].set_visible(False)
         self.axs.spines["right"].set_visible(False)
-
         self.plot_data()
 
         # Instructions
         plt.subplots_adjust(bottom=0.15)
         self.fig.text(
             0.5, 0.04,
-            '** Accept/Reject = a/r,     ←/→ = Prev/Next,     ↑/↓ = Threshold,     Esc = Exit **',
+            '** Accept/Reject = a/r,     ←/→ = Prev/Next,     ↑/↓ = Threshold,     Enter = Save, Esc = Exit **',
             ha="center",
             bbox=dict(boxstyle="square", ec=(1., 1., 1.), fc=(0.9, 0.9, 0.9))
         )
 
-        # Connect events
+        # Callbacks
         self.fig.canvas.callbacks.connect('key_press_event', self.keypress)
         self.fig.canvas.callbacks.connect('close_event', self.close_event)
 
-        # Disable close (X) button
+        # Disable window X button
         win = plt.gcf().canvas.manager.window
         win.setWindowFlags(win.windowFlags() | QtCore.Qt.CustomizeWindowHint)
         win.setWindowFlags(win.windowFlags() & ~QtCore.Qt.WindowCloseButtonHint)
 
-        # Show GUI and block execution
+        # Block execution here
         plt.show()
-        self.result_df = self.index_df.copy()  # Store updated DataFrame after close
+        self.app.exec_()
+        self.result_df = self.index_df.copy()
 
     def get_index(self):
         if self.ind >= len(self.index_df):
@@ -103,8 +106,7 @@ class matplotGui:
 
         start = int(row['start_sample'])
         stop = int(row['stop_sample']) if pd.notnull(row['stop_sample']) else None
-        if start < 1:
-            start = 1
+        start = max(start, 1)
 
         data = ch.get_data(row['block'] + 1, start_sample=start, stop_sample=stop)
         return data, fs, os.path.basename(row['full_path'])
@@ -114,7 +116,7 @@ class matplotGui:
         try:
             raw_data, fs, file_name = self.load_data()
         except Exception as e:
-            print(f"Error loading data for index {self.ind}: {e}")
+            print(f"Error loading data at index {self.ind}: {e}")
             self.index_df.at[self.ind, 'accepted'] = 0
             return
 
@@ -122,9 +124,7 @@ class matplotGui:
         spike_locs, _ = find_peaks(raw_data, prominence=spike_amp, distance=fs * 1e-3, wlen=int(fs / 10))
 
         t = np.arange(raw_data.shape[0]) / fs
-        threshold_str = f"Threshold = {spike_amp}"
-
-        self.axs.plot(t, raw_data, color='black', label=threshold_str)
+        self.axs.plot(t, raw_data, color='black', label=f"Threshold = {spike_amp}")
         self.axs.plot(t[spike_locs], raw_data[spike_locs], 'o', color='darkmagenta')
         self.axs.legend(loc='upper right')
 
@@ -135,58 +135,52 @@ class matplotGui:
         self.axs.set_ylabel('Vm (mV)')
         self.fig.canvas.draw()
 
-    def close_event(self, event):
-        plt.close()
-
     def keypress(self, event):
         if event.key == 'right':
             self.ind += 1
             self.plot_data()
-
         elif event.key == 'left':
             self.ind -= 1
             self.plot_data()
-
         elif event.key == 'up':
             self.index_df.at[self.ind, 'threshold'] += 5
             self.plot_data()
-
         elif event.key == 'down':
             self.index_df.at[self.ind, 'threshold'] -= 5
             self.plot_data()
-
         elif event.key == 'a':
             self.index_df.at[self.i, 'accepted'] = 1
             self.set_background_color()
             plt.draw(); plt.pause(self.wait_time)
             self.ind += 1
             self.plot_data()
-
         elif event.key == 'r':
             self.index_df.at[self.i, 'accepted'] = 0
             self.set_background_color()
             plt.draw(); plt.pause(self.wait_time)
             self.ind += 1
             self.plot_data()
-
         elif event.key == 'ctrl+a':
             self.index_df['accepted'] = 1
             self.set_background_color()
             plt.draw(); plt.pause(self.wait_time)
-
         elif event.key == 'ctrl+r':
             self.index_df['accepted'] = 0
             self.set_background_color()
             plt.draw(); plt.pause(self.wait_time)
+        elif event.key == 'enter' or event.key == 'escape':
+            self.close_event(event)
 
-        elif event.key == 'enter':
-            plt.close()
+    def close_event(self, event):
+        plt.close()
+        if hasattr(self, 'app'):
+            self.app.quit()
 
     def get_result(self):
         """
         Returns
         -------
         pd.DataFrame
-            DataFrame containing all verification results.
+            DataFrame with verified 'threshold' and 'accepted' columns.
         """
         return self.result_df

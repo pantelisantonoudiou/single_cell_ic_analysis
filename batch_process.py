@@ -108,9 +108,10 @@ def analyze_ic(raw_data, stim, fs, stim_type, wave, prominence, interpolation_fa
 if __name__ == '__main__':
     
     # settings
-    index_csv_path = r"R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys\stim_event_index_verified.csv"
+    index_csv_path = r"R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys\index.csv"
     index_df = pd.read_csv(index_csv_path)
     stim_correction = 1000
+    prominence = 30
     
     # get data and stim
     row = index_df.loc[0]
@@ -118,7 +119,7 @@ if __name__ == '__main__':
                                        row.stop_sample, row.data_ch, row.stim_ch, stim_correction)
     
     # analyze
-    analyze_ic(raw_data, stim, fs, row.stim_type, False, row.threshold, interpolation_factor=1,
+    analyze_ic(raw_data, stim, fs, row.stim_type, False, prominence, interpolation_factor=1,
                    post_rheo_steps=-1, max_spikes_per_step=-1)
     
     

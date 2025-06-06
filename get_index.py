@@ -6,196 +6,240 @@ import pandas as pd
 ##### ------------------------------------------------------------------- #####
 
 
-def get_file_data(main_path: str, sep: str = '_') -> pd.DataFrame:
+class StimEventIndexer:
     """
-    Scan subdirectories for .adicht files and return a DataFrame of file metadata.
+    Class to scan `.adicht` files in a directory tree, extract stimulation event metadata,
+    and build a unified stim event index.
 
-    Each row represents one .adicht file with the following columns:
-        - folder_path : name of the subdirectory (lowercased)
-        - file        : filename (lowercased)
-        - full_path   : absolute path to the file
-        - condition   : derived from the first segment of folder name split by `sep`
-        - (extra columns): additional segments of the folder name
+    Each subfolder under `main_path` is assumed to contain .adicht files. The subfolder's
+    name is split by `sep` into multiple condition tokens (e.g., "pv_gfp" → ["pv", "gfp"]).
+    These become columns `condition_0`, `condition_1`, etc.
 
     Parameters
     ----------
     main_path : str
-        Path to the parent directory containing subfolders with .adicht files.
-    sep : str, optional
-        Delimiter used to split subfolder names into metadata (default: "_").
-
-    Returns
-    -------
-    pd.DataFrame
-        Table containing file metadata and full path for each .adicht file.
-    """
-    main_path = os.path.normpath(main_path)
-    dirs = [d for d in os.listdir(main_path) if os.path.isdir(os.path.join(main_path, d))]
-
-    df_list = []
-
-    for folder in dirs:
-        subfolder_path = os.path.join(main_path, folder)
-        filelist = [f for f in os.listdir(subfolder_path) if f.lower().endswith('.adicht')]
-
-        if not filelist:
-            continue
-
-        split_labels = folder.split(sep)
-        temp_df = pd.DataFrame([split_labels] * len(filelist))
-        temp_df.insert(0, 'file', [f.lower() for f in filelist])
-        temp_df.insert(0, 'folder_path', folder.lower())
-        temp_df.insert(0, 'file_path', [os.path.join(subfolder_path, f) for f in filelist])
-
-        df_list.append(temp_df)
-
-    if not df_list:
-        return pd.DataFrame(columns=['folder_path', 'file', 'file_path'])
-
-    file_data = pd.concat(df_list, ignore_index=True)
-    file_data.columns = ['file_path', 'folder_path', 'file'] + [f'meta_{i}' for i in range(file_data.shape[1] - 3)]
-    file_data['condition'] = file_data['meta_0'] if 'meta_0' in file_data.columns else None
-    file_data = file_data.apply(lambda col: col.astype(str).str.lower())
-
-    return file_data
-
-
-def get_comment_ranges_for_file(
-    file_path: str,
-    file_name: str,
-    stim_types: list,
-    data_ch: int,
-    stim_ch: int
-) -> list:
-    """
-    Extract stimulation event metadata from a single ADI file.
-
-    Parameters
-    ----------
-    file_path : str
-        Full path to the ADI file.
-    file_name : str
-        Name of the file (used for tracking).
+        Path to the parent directory containing subfolders of `.adicht` files.
     stim_types : list of str
-        Stimulus types to search for (e.g., ['io', 'rh']).
+        List of stimulation prefixes to search for in the comment texts, e.g. ['io', 'rh'].
     data_ch : int
-        Channel index for voltage/recording.
+        Index of the voltage (Vm) channel in the ADI file.
     stim_ch : int
-        Channel index for stimulation/current.
+        Index of the stimulus/current channel in the ADI file.
+    sep : str, optional
+        Delimiter used to split subfolder names into condition tokens (default: "_").
 
-    Returns
-    -------
-    list of dict
-        One dict per stimulation event.
-    """
-    try:
-        fread = adi.read_file(file_path)
-        data_obj = fread.channels[data_ch]
-        fs = int(data_obj.fs[0])
-    except Exception as e:
-        print(f"Error loading {file_path}: {e}")
-        return []
-
-    results = []
-
-    for block_idx, record in enumerate(data_obj.records):
-        comments = record.comments
-        if not comments:
-            continue
-
-        com_texts = [c.text.lower() for c in comments]
-        com_ticks = {c.text.lower(): c.tick_position for c in comments}
-
-        for stim_type in stim_types:
-            start_comment = f"{stim_type}_start"
-            stop_comment = f"{stim_type}_stop"
-
-            if start_comment in com_texts:
-                start_sample = com_ticks[start_comment] + 1
-                if stim_type == 'io':
-                    start_sample = max(1, start_sample - int(fs / 2))
-
-                stop_sample = com_ticks.get(stop_comment, None)
-
-                results.append({
-                    'full_path': file_path,
-                    'file_name': file_name,
-                    'stim_type': stim_type,
-                    'block': block_idx,
-                    'start_sample': start_sample,
-                    'stop_sample': stop_sample,
-                    'data_ch': data_ch,
-                    'stim_ch': stim_ch,
-                    'fs': fs
-                })
-
-    return results
-
-
-def get_comment_ranges(index_df: pd.DataFrame, stim_types: list, data_ch: int, stim_ch: int) -> pd.DataFrame:
-    """
-    Extract stimulation event metadata from all files in `index_df`.
-
-    Parameters
+    Attributes
     ----------
     index_df : pd.DataFrame
-        Must contain 'full_path' and 'file' columns.
-    stim_types : list of str
-        Stim labels to look for (e.g., ['io', 'rh']).
-    data_ch : int
-        Vm channel index.
-    stim_ch : int
-        Stim channel index.
-
-    Returns
-    -------
-    pd.DataFrame
-        Rows: stim events
-        Columns: metadata including full_path, file, block, sample indices, etc.
+        DataFrame of all `.adicht` files with columns:
+        ['file_path', 'file_name', 'folder_name', 'condition_0', 'condition_1', ...]
+    event_df : pd.DataFrame
+        DataFrame of all stimulation events with columns:
+        ['file_path', 'file_name', 'stim_type', 'block', 'start_sample', 'stop_sample',
+         'data_ch', 'stim_ch', 'fs', 'condition_0', 'condition_1', ...]
     """
-    all_results = []
 
-    for _, row in index_df.iterrows():
-        file_results = get_comment_ranges_for_file(
-            file_path=row['file_path'],
-            file_name=row['file'],
-            stim_types=stim_types,
-            data_ch=data_ch,
-            stim_ch=stim_ch
-        )
-        all_results.extend(file_results)
+    # Column name constants
+    COL_FILE_PATH   = 'file_path'
+    COL_FILE_NAME   = 'file_name'
+    COL_FOLDER      = 'folder_name'
+    COL_STIM_TYPE   = 'stim_type'
+    COL_BLOCK       = 'block'
+    COL_START       = 'start_sample'
+    COL_STOP        = 'stop_sample'
+    COL_DATA_CH     = 'data_ch'
+    COL_STIM_CH     = 'stim_ch'
+    COL_FS          = 'fs'
 
-    if not all_results:
-        return pd.DataFrame(columns=[
-            'file_path', 'file_name', 'stim_type', 'block',
-            'start_sample', 'stop_sample', 'data_ch', 'stim_ch', 'fs'
-        ])
+    def __init__(self, main_path: str, stim_types: list, data_ch: int, stim_ch: int, sep: str = '_'):
+        self.main_path = os.path.normpath(main_path)
+        self.stim_types = stim_types
+        self.data_ch = data_ch
+        self.stim_ch = stim_ch
+        self.sep = sep
 
-    return pd.DataFrame(all_results)
+        # These will be populated by methods
+        self.index_df = pd.DataFrame()
+        self.event_df = pd.DataFrame()
+
+    def scan_files(self) -> pd.DataFrame:
+        """
+        Scan all immediate subdirectories of `main_path` for `.adicht` files.
+        Split each subfolder's name by `sep` into multiple condition tokens:
+            condition_0, condition_1, ..., as many as there are tokens.
+
+        Returns
+        -------
+        pd.DataFrame
+            Columns:
+                ['file_path', 'file_name', 'folder_name', 'condition_0', 'condition_1', ...]
+        """
+        rows = []
+        for folder in os.listdir(self.main_path):
+            folder_path = os.path.join(self.main_path, folder)
+            if not os.path.isdir(folder_path):
+                continue
+
+            tokens = folder.lower().split(self.sep)
+            meta_cols = {f'condition_{i}': tokens[i] for i in range(len(tokens))}
+
+            for fname in os.listdir(folder_path):
+                if not fname.lower().endswith('.adicht'):
+                    continue
+                row = {
+                    self.COL_FILE_PATH: os.path.join(folder_path, fname),
+                    self.COL_FILE_NAME: fname.lower(),
+                    self.COL_FOLDER: folder.lower(),
+                    **meta_cols
+                }
+                rows.append(row)
+
+        if not rows:
+            # Return empty with minimal columns
+            return pd.DataFrame(columns=[
+                self.COL_FILE_PATH, self.COL_FOLDER, self.COL_FILE_NAME
+            ])
+
+        df = pd.DataFrame(rows)
+        # Ensure all string columns are lowercase
+        df = df.apply(lambda col: col.astype(str).str.lower())
+        self.index_df = df
+        return df
+
+    def extract_events_from_file(self, row: pd.Series) -> list:
+        """
+        Given one row of `self.index_df`, read that ADI file and extract all stimulation
+        events based on comment markers of the form "<stim_type>_start"/"<stim_type>_stop".
+
+        Parameters
+        ----------
+        row : pd.Series
+            A row from `self.index_df` containing at least 'file_path' and 'file_name'.
+
+        Returns
+        -------
+        list of dict
+            Each dict has keys:
+            ['file_path', 'file_name', 'stim_type', 'block', 'start_sample', 'stop_sample',
+             'data_ch', 'stim_ch', 'fs', 'condition_0', 'condition_1', ...]
+        """
+        file_path = row[self.COL_FILE_PATH]
+        file_name = row[self.COL_FILE_NAME]
+
+        try:
+            fread = adi.read_file(file_path)
+            channel_obj = fread.channels[self.data_ch]
+            fs = int(channel_obj.fs[0])
+        except Exception as e:
+            print(f"⚠️ Failed to read '{file_path}': {e}")
+            return []
+
+        events = []
+        for block_idx, record in enumerate(channel_obj.records):
+            comments = record.comments
+            if not comments:
+                continue
+
+            com_texts = [c.text.lower() for c in comments]
+            com_ticks = {c.text.lower(): c.tick_position for c in comments}
+
+            for stim in self.stim_types:
+                start_key = f"{stim}_start"
+                stop_key  = f"{stim}_stop"
+                if start_key in com_texts:
+                    start_sample = com_ticks[start_key] + 1
+                    if stim == 'io':
+                        start_sample = max(1, start_sample - (fs // 2))
+                    stop_sample = com_ticks.get(stop_key)
+
+                    event = {
+                        self.COL_FILE_PATH: file_path,
+                        self.COL_FILE_NAME: file_name,
+                        self.COL_STIM_TYPE: stim,
+                        self.COL_BLOCK: block_idx,
+                        self.COL_START: start_sample,
+                        self.COL_STOP: stop_sample,
+                        self.COL_DATA_CH: self.data_ch,
+                        self.COL_STIM_CH: self.stim_ch,
+                        self.COL_FS: fs
+                    }
+                    # Copy over all condition tokens
+                    for col in row.index:
+                        if col.startswith('condition_'):
+                            event[col] = row[col]
+                    events.append(event)
+
+        return events
+
+    def build_event_index(self) -> pd.DataFrame:
+        """
+        Build the complete stim event index by:
+          1. Calling `scan_files()` to populate `self.index_df`.
+          2. Iterating over each file row and extracting events via `extract_events_from_file()`.
+          3. Combining all event dictionaries into a single DataFrame.
+
+        Returns
+        -------
+        pd.DataFrame
+            Stim event index with columns:
+            ['file_path', 'file_name', 'stim_type', 'block', 'start_sample', 'stop_sample',
+             'data_ch', 'stim_ch', 'fs', 'condition_0', 'condition_1', ...]
+        """
+        # Step 1: Scan for ADI files and build file index
+        self.scan_files()
+        all_events = []
+
+        # Step 2: Extract events from each file
+        for _, row in self.index_df.iterrows():
+            events = self.extract_events_from_file(row)
+            if events:
+                all_events.extend(events)
+
+        # Step 3: Create DataFrame
+        if not all_events:
+            # If no events, return empty with expected columns
+            columns = [
+                self.COL_FILE_PATH, self.COL_FILE_NAME, self.COL_STIM_TYPE, self.COL_BLOCK,
+                self.COL_START, self.COL_STOP, self.COL_DATA_CH, self.COL_STIM_CH, self.COL_FS
+            ]
+            # Add any condition_* columns if present in index_df
+            cond_cols = [c for c in self.index_df.columns if c.startswith('condition_')]
+            return pd.DataFrame(columns=columns + cond_cols)
+
+        self.event_df = pd.DataFrame(all_events)
+        return self.event_df
+
+    def save_index(self, output_csv: str):
+        """
+        Save the built stim event index (`self.event_df`) to a CSV file.
+
+        Parameters
+        ----------
+        output_csv : str
+            Path where the CSV will be written.
+        """
+        if self.event_df.empty:
+            print("⚠️ No events to save.")
+            return
+        self.event_df.to_csv(output_csv, index=False)
+        print(f"✅ Stim event index saved to: {output_csv}")
 
 
 if __name__ == '__main__':
-    # === Configuration ===
-    main_path = r"R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys"
+    # ================= USER SETTINGS =================
+    main_path  = r"R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys"
     stim_types = ['io', 'rh', 'ch', 'sch']
-    data_ch = 0
-    stim_ch = 1
-
-    # === Step 1: Build File Index ===
-    index_df = get_file_data(main_path, sep='_')
-
-    # === Step 2: Get Stim Event Metadata ===
-    comment_index_df = get_comment_ranges(index_df, stim_types, data_ch, stim_ch)
-
-    # === Step 3: Join with condition or other metadata ===
-    if 'condition' in index_df.columns:
-        comment_index_df = comment_index_df.merge(
-            index_df[['file', 'condition']], 
-            left_on='file_name', right_on='file', 
-            how='left'
-        ).drop(columns='file')
-
-    # === Step 4: Save to CSV ===
+    data_ch    = 0
+    stim_ch    = 1
+    sep        = '_'
     output_csv = os.path.join(main_path, 'index.csv')
-    comment_index_df.to_csv(output_csv, index=False)
-    print(f"\n✅ Stim event index saved to: {output_csv}")
+    # ================================================
+
+    indexer = StimEventIndexer(main_path, stim_types, data_ch, stim_ch, sep)
+    event_index_df = indexer.build_event_index()
+    indexer.save_index(output_csv)
+
+    # Summary
+    total_files  = event_index_df['file_name'].nunique() if not event_index_df.empty else 0
+    total_events = len(event_index_df)
+    print(f"📁 Indexed {total_files} files, found {total_events} stim events.")
