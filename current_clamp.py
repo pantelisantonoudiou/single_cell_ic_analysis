@@ -7,7 +7,6 @@ from scipy.signal import find_peaks, stft
 import matplotlib.pyplot as plt
 ##### ------------------------------------------------------------------- #####
 
-
 class Iclamp:
     """
     Detect and calculate spike properties for different current clamp stimulation protocols.
@@ -332,6 +331,29 @@ class Iclamp:
         
         return round(rmp, 3)
     
+    def get_rheobase(self, data, stim):
+        """
+        Get rheobase current from the first detected spike.
+
+        Parameters
+        ----------
+        data : array, voltage signal
+        stim : array, input current
+        
+        Returns
+        -------
+        rheo : float, rheobase current in pA
+
+        """
+
+        locs, _ = find_peaks(data, prominence=self.prominence, distance=self.dist)
+        if locs.size == 0:
+            out = None
+        else:
+            out = np.mean(stim[locs[0]-int(self.fs*0.001): locs[0]+int(self.fs*0.001)])
+            
+        return out
+    
     def get_chirp(self, data, stim, stim_to_amp=1e12, data_to_v=1e3):
         """
         Calculate the impedance across a frequency range for a given voltage signal and input stimulus.
@@ -382,32 +404,85 @@ class Iclamp:
         
         return impedance, peak_power, freq
     
-    def get_spike_transfer(self, data, stim, window):
-        """
-        Get number of spikes per frequency bin.
+    # def get_spike_transfer(self, data, stim, window):
+    #     """
+    #     Get number of spikes per frequency bin.
     
+    #     Parameters
+    #     ----------
+    #     data : array, voltage signal (one trial)
+    #     stim : array, input current (one trial)
+    #     window : float, to calculate fft and detect spikes (seconds) 
+    
+    #     Returns
+    #     -------
+    #     spike_count : list, number of spikes per frequency
+    #     freq, list, stim frequency per bin
+        
+    #     """
+    
+    #     # get window in samples and find peak freq
+    #     win = int(window*self.fs)
+    #     f, t, power = stft(stim-np.mean(stim), fs=self.fs, nperseg=win, noverlap=0)
+    #     power = np.abs(power)**2
+    #     freq = f[np.argmax(power, axis=0)]
+        
+    #     # get spike count per bin
+    #     spike_locs, _ = find_peaks(data, prominence=self.prominence,
+    #                                distance=self.dist, wlen=self.wlen)
+    #     spike_count = len()
+        
+    #     return spike_count, freq[:-1]+int(1/window) # adjust window to match stim
+    
+    def get_spike_transfer(self, data, stim, freq_per_sec=1, window=0.25, max_freq=100, show_plot=False):
+        """
+        Detects spikes in a voltage signal and computes the number of spikes per frequency bin.
+        
         Parameters
         ----------
-        data : array, voltage signal (one trial)
-        stim : array, input current (one trial)
-        window : float, to calculate fft and detect spikes (seconds) 
-    
+        data : array-like
+            The voltage signal (Vm) data, expected to be a one-dimensional array.
+        freq_per_sec : int, optional
+            The number of frequency bins to be considered per second for spike counting. Defaults to 1 bin/sec.
+        window : float, optional
+            Used to calculate fft
+        max_freq: float, optional
+            Maximum allowed frequency for stim
+        
         Returns
         -------
-        spike_count : list, number of spikes per frequency
-        freq, list, stim frequency per bin
-        
+        spike_per_freq : list
+            A list containing the count of spikes in each frequency bin.
+        bins : array
+            The edges of the frequency bins used for spike counting.
         """
-    
+        
         # get window in samples and find peak freq
         win = int(window*self.fs)
         f, t, power = stft(stim-np.mean(stim), fs=self.fs, nperseg=win, noverlap=0)
         power = np.abs(power)**2
-        freq = f[np.argmax(power, axis=0)]
+        max_power_freqs = f[np.argmax(power, axis=0)][1:-1]
+        fmin = np.min(max_power_freqs)
+        fmax = np.max(max_power_freqs)
         
-        # get spike count per bin
-        locs = self.spike_locs(data.reshape((-1, win)))
-        spike_count = self.count_spikes(locs)
+        if fmax > max_freq:
+            breakpoint()
+            print('Warning exceeded max freq')
+            print(max_power_freqs)
         
-        return spike_count, freq[:-1]+int(1/window) # adjust window to match stim
+        # get spike locations
+        spike_locs, _ = find_peaks(data, prominence=self.prominence, distance=self.fs*self.dist/1000)
+
+        # get spikes per frequency
+        bins = np.arange(fmin, fmax+1, freq_per_sec)
+        spike_per_freq , _ = np.histogram(spike_locs/self.fs, bins)
+        
+        # plot
+        if show_plot == True:
+            plt.figure(figsize=(15,5))
+            t = np.arange(len(data))
+            plt.plot(t, data)
+            plt.plot(t[spike_locs], data[spike_locs],'rx',markersize=12)
+
+        return spike_per_freq, bins[1:]
         
