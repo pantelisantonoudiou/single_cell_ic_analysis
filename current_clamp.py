@@ -332,50 +332,6 @@ class Iclamp:
         
         return round(rmp, 3)
     
-    def get_short_chirp(self, data, stim, window=0.2, threshold=1.5):
-        """
-        Get number of spikes per frequency bin for all short chirp trials.
-
-        Parameters
-        ----------
-        data : array, voltage signal
-        stim : array, input current
-        window : float, to calculate fft and detect spikes (seconds) 
-        threshold: float, for stim detection
-
-        Returns
-        -------
-        spikes : list, number of spikes per frequency
-        freqs : list, stim frequency per bin
-        
-        """
-        
-        # get stim times       
-        start, stop, dur = self.get_stim_times_sch(stim, threshold=threshold)
-        start += int(0.005*self.fs)
-        stop = start + int(round(dur/self.fs,1)*self.fs)
-        
-        if self.show_io:
-            plt.figure()
-            t = np.arange(len(stim))
-            plt.plot(t, stim)
-            plt.plot(t[start], stim[start], 'o', markersize=20)
-            plt.plot(t[stop], stim[stop], 'o', markersize=20)
-        
-        # calculate spike transfer per trial
-        spikes = []
-        freqs = []
-        for s1, s2 in zip(start, stop):
-            spike_count, freq = self.get_spike_transfer( 
-                                data[s1:s2],
-                                stim[s1:s2],
-                                window)
-            spikes.extend(spike_count) 
-            freqs.extend(freq) 
-
-        return spikes, freqs
-    
-    
     def get_chirp(self, data, stim, stim_to_amp=1e12, data_to_v=1e3):
         """
         Calculate the impedance across a frequency range for a given voltage signal and input stimulus.
@@ -425,5 +381,33 @@ class Iclamp:
         peak_power = peak_power[lower_idx:upper_idx]
         
         return impedance, peak_power, freq
+    
+    def get_spike_transfer(self, data, stim, window):
+        """
+        Get number of spikes per frequency bin.
+    
+        Parameters
+        ----------
+        data : array, voltage signal (one trial)
+        stim : array, input current (one trial)
+        window : float, to calculate fft and detect spikes (seconds) 
+    
+        Returns
+        -------
+        spike_count : list, number of spikes per frequency
+        freq, list, stim frequency per bin
         
+        """
+    
+        # get window in samples and find peak freq
+        win = int(window*self.fs)
+        f, t, power = stft(stim-np.mean(stim), fs=self.fs, nperseg=win, noverlap=0)
+        power = np.abs(power)**2
+        freq = f[np.argmax(power, axis=0)]
+        
+        # get spike count per bin
+        locs = self.spike_locs(data.reshape((-1, win)))
+        spike_count = self.count_spikes(locs)
+        
+        return spike_count, freq[:-1]+int(1/window) # adjust window to match stim
         
