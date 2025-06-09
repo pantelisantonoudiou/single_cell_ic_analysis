@@ -111,7 +111,7 @@ class BatchProcess:
             Spike detection threshold.
         """
         self.main_path      = main_path
-        self.index           = index_df.copy()
+        self.index           = index_df.copy().reset_index(drop=True) # get unique IDs
         self.stim_correction = stim_correction
         self.prominence      = prominence
 
@@ -154,8 +154,7 @@ class BatchProcess:
         dfm = pd.DataFrame(metrics)
 
         # save validation figure
-        sub = f"{row.stim_type}{'_wave' if wave else ''}"
-        plot_dir = os.path.join(self.main_path, 'analyzed', sub, 'plots')
+        plot_dir = os.path.join(self.output_dir, 'plots')
         os.makedirs(plot_dir, exist_ok=True)
         fname = os.path.splitext(row.file_name)[0]
         plot_path = os.path.join(plot_dir, f"{fname}_blk{row.block}.png")
@@ -215,10 +214,9 @@ class BatchProcess:
             with tqdm_joblib(tqdm(total=len(jobs), desc=f"{stim_type}{'_wave' if wave else ''}")):
                 parallel_results = Parallel(n_jobs=self.njobs)(jobs)
             results = [res[0] for res in parallel_results]
-    
-        feat = pd.concat(results, ignore_index=True)
         
-        result =  subdf.reset_index(drop=True).join(feat.set_index('id'), how='left')
+        feat = pd.concat(results, ignore_index=True)
+        result =  subdf.join(feat.set_index('id'), how='left').reset_index()
         return  result
 
     def run_all(self, output_dir, stim_types):
@@ -229,27 +227,27 @@ class BatchProcess:
         for st in stim_types:
             if st == 'io':
                 # basic
+                self.output_dir = os.path.join(output_dir, 'io_basic')
+                os.makedirs(self.output_dir, exist_ok=True)
                 df_basic = self.all_cells(st, wave=False)
-                odir = os.path.join(output_dir, 'io_basic')
-                os.makedirs(odir, exist_ok=True)
-                df_basic.to_csv(os.path.join(odir, 'features.csv'), index=False)
+                df_basic.to_csv(os.path.join(self.output_dir, 'features.csv'), index=False)
 
                 # waveform
+                self.output_dir = os.path.join(output_dir, 'io_wave')
+                os.makedirs(self.output_dir, exist_ok=True)
                 df_wave = self.all_cells(
                     st, wave=True,
                     interpolation_factor=10,
                     post_rheo_steps=3,
                     max_spikes_per_step=3
                 )
-                odir = os.path.join(output_dir, 'io_wave')
-                os.makedirs(odir, exist_ok=True)
-                df_wave.to_csv(os.path.join(odir, 'features.csv'), index=False)
+                df_wave.to_csv(os.path.join(self.output_dir, 'features.csv'), index=False)
 
             else:
+                self.output_dir = os.path.join(output_dir, st)
+                os.makedirs(self.output_dir, exist_ok=True)
                 df = self.all_cells(st)
-                odir = os.path.join(output_dir, st)
-                os.makedirs(odir, exist_ok=True)
-                df.to_csv(os.path.join(odir, 'features.csv'), index=False)
+                df.to_csv(os.path.join(self.output_dir, 'features.csv'), index=False)
 
         print("✅ All protocols processed.")
 
