@@ -187,9 +187,7 @@ class Iclamp:
         """
         input_res = []
         for s, a, sc in zip(signal, i_amp, spike_count):
-            if (a < 21) & (sc < 1):             
-                # plt.figure()
-                # plt.plot(s)
+            if (a < 21) & (sc == 0):
                 ir_value = (np.median(s)-self.base)/ (a/i_to_v)
             else:
                 ir_value = None
@@ -499,7 +497,7 @@ class Iclamp:
             for i, s in enumerate(sig):
                 offset = i * 10
                 ax.plot(np.arange(len(s)) / self.fs, s + offset, 'k-', alpha=0.7)
-                ax.plot(locs[i] / self.fs, s[locs[i]] + offset, 'rx', ms=4)
+                ax.plot(locs[i] / self.fs, s[locs[i]] + offset, 'rx', ms=20)
             ax.set_title("IO spikes (stacked steps)")
         
         elif stim_type == 'rh':
@@ -514,13 +512,13 @@ class Iclamp:
         elif stim_type == 'sch':
             peaks, _ = find_peaks(data, prominence=self.prominence, distance=self.dist)
             ax.plot(t, data, 'k-')
-            ax.plot(peaks / self.fs, data[peaks], 'rx')
+            ax.plot(peaks / self.fs, data[peaks], 'rx', ms=20)
             ax.set_title("Short‐chirp spikes")
         
         elif stim_type == 'ch':
             ax.plot(t, data, 'k-', label='Vm')
             stim_scaled = stim / np.max(np.abs(stim)) * np.ptp(data) + np.median(data)
-            ax.plot(t, stim_scaled, 'b--', alpha=0.5, label='Stim')
+            ax.plot(t, stim_scaled-10, 'b-', alpha=0.5, label='Stim')
             ax.set_title("Chirp raw + stim")
         
         ax.set_xlabel("Time (s)")

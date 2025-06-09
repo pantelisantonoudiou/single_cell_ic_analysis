@@ -257,7 +257,7 @@ if __name__ == '__main__':
     main_path   = r"R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys"
     index_csv   = os.path.join(main_path, "index.csv")
     analyzed_dir = os.path.join(main_path, 'analyzed')
-    stim_types  = ['io', 'rh', 'ch', 'sch']
+    stim_types  = ['io', 'rh', 'ch', 'sch'] #'io', 'rh', 'ch', 'sch'
     njobs       = 1
     # =====================
 
@@ -266,6 +266,6 @@ if __name__ == '__main__':
         main_path, idx_df,
         njobs=njobs,
         stim_correction=1000,
-        prominence=30
+        prominence=25
     )
     processor.run_all(analyzed_dir, stim_types)
