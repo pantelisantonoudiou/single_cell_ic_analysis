@@ -3,6 +3,7 @@
 batch_process.py
 
 Batch‐processing of current‐clamp experiments using Iclamp.
+***Voltage data need to be converted to mV and Stim to pA***
 
 Features
 --------
@@ -27,7 +28,7 @@ import adi
 # ======================================================================= #
 
 
-def load_adi_data(file_path, block, start_sample, stop_sample, data_ch, stim_ch, stim_correction=1.0):
+def load_adi_data(file_path, block, start_sample, stop_sample, data_ch, stim_ch, data_correction=1.0, stim_correction=1.0):
     """
     Load voltage and stimulus data from an ADI file block.
 
@@ -45,6 +46,8 @@ def load_adi_data(file_path, block, start_sample, stop_sample, data_ch, stim_ch,
         Index of voltage (membrane potential) channel.
     stim_ch : int
         Index of stimulus (current injection) channel.
+    data_correction : float, optional
+            Scaling factor for voltage data, by default 1.0.
     stim_correction : float, optional
         Scaling factor for stimulus data, by default 1.0.
 
@@ -57,6 +60,7 @@ def load_adi_data(file_path, block, start_sample, stop_sample, data_ch, stim_ch,
     fs : int
         Sampling frequency.
     """
+    
     fread = adi.read_file(file_path)
     ch_data = fread.channels[data_ch]
     ch_stim = fread.channels[stim_ch]
@@ -87,7 +91,6 @@ def tqdm_joblib(tqdm_object):
     finally:
         joblib.parallel.Parallel.print_progress = original
         tqdm_object.close()
-
 
 
 class BatchProcess:
@@ -122,6 +125,8 @@ class BatchProcess:
         """
         Load, analyze, and save plot for **one** stim‐event row.
         """
+        
+        # load data and stim
         raw, stim, fs = load_adi_data(
             file_path=row.file_path,
             block=row.block,
@@ -134,7 +139,8 @@ class BatchProcess:
 
         if raw.size == 0:
             raise RuntimeError(f"Empty data: {row.file_path}")
-
+        
+        # analyze
         ic = Iclamp(fs, prominence=self.prominence)
         metrics = ic.analyze(
             raw, stim,
@@ -158,7 +164,10 @@ class BatchProcess:
         os.makedirs(plot_dir, exist_ok=True)
         fname = os.path.splitext(row.file_name)[0]
         plot_path = os.path.join(plot_dir, f"{fname}_blk{row.block}.png")
-        ic.save_validation_plot(raw, stim, row.stim_type, plot_path)
+        ic.save_validation_plot(raw, stim, row.stim_type, plot_path,
+                                wave=wave,
+                                post_rheo_steps=post_steps,
+                                max_spikes_per_step=max_spikes)
 
         return dfm
 
@@ -257,7 +266,7 @@ if __name__ == '__main__':
     main_path   = r"R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys"
     index_csv   = os.path.join(main_path, "index.csv")
     analyzed_dir = os.path.join(main_path, 'analyzed')
-    stim_types  = ['io', 'rh', 'ch', 'sch'] #'io', 'rh', 'ch', 'sch'
+    stim_types  = ['sch', 'rh', 'ch', 'sch'] #'io', 'rh', 'ch', 'sch'
     njobs       = 1
     # =====================
 
