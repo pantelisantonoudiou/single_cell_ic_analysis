@@ -2,7 +2,6 @@
 ##### ----------------------------- IMPORTS ----------------------------- #####
 import numpy as np
 import pandas as pd
-from scipy import interpolate
 import matplotlib.pyplot as plt
 ##### ------------------------------------------------------------------- #####
 
@@ -91,7 +90,7 @@ def get_io_properties(plot_data, group_cols, show_plot=False):
 
                 # Ensure strictly increasing spike freq in segment
                 y = slope_segment['spike_frequency'].values
-                if len(y) >= 3 and np.all(np.diff(y) > 0):
+                if len(y) >= 3 and np.all(np.diff(y) >= 0):
                     x = slope_segment['amp'].values
                     io_slope = np.polyfit(x, y, 1)[0]
 
@@ -122,7 +121,6 @@ def get_io_properties(plot_data, group_cols, show_plot=False):
     return pd.DataFrame(results)
 
 
-
 def get_waveform_properties(plot_data, group_cols, show_plot=False):
     """
     Extract average action potential waveform features per group (e.g., per cell).
@@ -149,9 +147,7 @@ def get_waveform_properties(plot_data, group_cols, show_plot=False):
         # Compute mean waveform per group
         df = df.groupby('time')[['mV']].mean().reset_index()
         time = df['time'].values
-        n = len(time)
-        waveform_matrix = df['mV'].values.reshape(-1, n)  # assumes one full waveform per row
-        waveform = waveform_matrix.mean(axis=0)
+        waveform = df['mV'].values
         step = time[1] - time[0]
 
         # Spike peak
