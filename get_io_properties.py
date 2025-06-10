@@ -47,7 +47,6 @@ plot_io = (
 )
 plot_io = plot_io[plot_io['amp'] > 0]
 io_properties = get_io_properties(plot_io, group_cols, show_plot=True)
-io_properties = io_properties[io_properties['max_firing_rate'] > 0]
 
 # ===== Waveform properties (AP shape) =====
 df_wave = df_wave.dropna(subset=['mV', 'time'])
