@@ -60,16 +60,16 @@ sns.barplot(data=dfs['rh'], x='treatment', y='rheobase', palette='pastel', error
 sns.stripplot(data=dfs['rh'], x='treatment', y='rheobase', color='black', jitter=True, alpha=0.6)
 plt.title('Rheobase by Treatment (RH)')
 
-# ==== PLOT: Power vs Stim Frequency (CH) ====
+# ==== PLOT: Impedance vs Frequency (CH) ====
 plt.figure(figsize=(7, 5))
 sns.lineplot(
     data=dfs['ch'],
-    x='freq', y='peak_power',
+    x='freq', y='impedance',
     hue='treatment', errorbar='se', marker='o'
 )
-plt.title('CH: Power vs Stim Frequency')
-plt.xlabel('Stim Frequency (Hz)')
-plt.ylabel('Power')
+plt.title('CH: Chirp Stimulus')
+plt.xlabel( 'Frequency (Hz)')
+plt.ylabel('Impedance')
 
 # ==== PLOT: Spikes vs Stim Frequency (SCH) ====
 plt.figure(figsize=(7, 5))
