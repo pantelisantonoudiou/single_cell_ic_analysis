@@ -5,6 +5,8 @@ import numpy as np
 from scipy import interpolate
 from scipy.signal import find_peaks, stft
 import matplotlib.pyplot as plt
+import matplotlib as mpl
+mpl.rcParams.update({'font.size': 16})
 ##### ------------------------------------------------------------------- #####
 
 class Iclamp:
@@ -300,7 +302,7 @@ class Iclamp:
         return waveform, amp, times
     
     
-    def get_rmp(self, data, bins=np.arange(-100,0,.1)):
+    def get_rmp(self, data, bins=np.arange(-100, 0, .1)):
         """
         Get resting membrane potential from io step.
         
@@ -318,7 +320,8 @@ class Iclamp:
         rmp = edges[np.argmax(bin_counts)]
         
         return round(rmp, 3)
-    
+
+
     def get_rheobase(self, data, stim):
         """
         Get rheobase current from the first detected spike.
@@ -341,8 +344,9 @@ class Iclamp:
             out = np.mean(stim[locs[0]-int(self.fs*0.001): locs[0]+int(self.fs*0.001)])
             
         return out
+
     
-    def get_chirp(self, data, stim, stim_to_amp=1e12, data_to_v=1e3):
+    def get_chirp(self, data, stim, stim_to_amp=1e12, data_to_v=1e3, freq_range=(2,59)):
         """
         Calculate the impedance across a frequency range for a given voltage signal and input stimulus.
         
@@ -350,8 +354,8 @@ class Iclamp:
         ----------
         data : array, Voltage signal (one trial), usually representing neural activity or membrane voltage.
         stim : array, Input current signal (one trial), used to drive the system.
-        stim_to_amp, float, conversion of stim to Amps
-        data_to_v, covnersion of membrane voltage values to Volts
+        stim_to_amp, float, conversion of stim to Amps (assumes input data are in pA)
+        data_to_v, covnersion of membrane voltage values to Volts (assumes input data are in mV)
         
         Returns
         -------
@@ -374,8 +378,8 @@ class Iclamp:
         v_psd = np.mean(np.abs(v_power)**2, axis=1)
               
         # trim to range
-        lower_idx = np.where(f==2)[0][0]
-        upper_idx = np.where(f==59)[0][0]+1
+        lower_idx = np.where(f==freq_range[0])[0][0]
+        upper_idx = np.where(f==freq_range[1])[0][0]+1
         v_psd_trimmed = v_psd[lower_idx:upper_idx]
         i_psd_trimmed = i_psd[lower_idx:upper_idx]
         freq = f[lower_idx:upper_idx]
@@ -388,8 +392,9 @@ class Iclamp:
         peak_power = peak_power[lower_idx:upper_idx]
         
         return impedance, peak_power, freq
-    
-    def get_spike_transfer(self, data, stim, freq_per_sec=1, window=0.25, max_freq=100):
+
+
+    def get_spike_transfer(self, data, stim, freq_per_sec=1, window=0.25, max_freq=60, return_frequencies_per_time=False):
         """
         Detects spikes in a voltage signal and computes the number of spikes per frequency bin.
         
@@ -403,6 +408,8 @@ class Iclamp:
             Used to calculate fft
         max_freq: float, optional
             Maximum allowed frequency for stim
+       return_frequencies_per_time: bool
+           If True reutrn frequencies_per_time
         
         Returns
         -------
@@ -410,6 +417,8 @@ class Iclamp:
             A list containing the count of spikes in each frequency bin.
         bins : array
             The edges of the frequency bins used for spike counting.
+        max_power_freqs: array
+            The frequency of max power at every window.
         """
         
         # get window in samples and find peak freq
@@ -430,32 +439,60 @@ class Iclamp:
         # get spikes per frequency
         bins = np.arange(fmin, fmax+1, freq_per_sec)
         spike_per_freq , _ = np.histogram(spike_locs/self.fs, bins)
+        
+        # return max_power_freqs if needed
+        if return_frequencies_per_time:
+            return spike_per_freq, bins[1:], max_power_freqs
 
         return spike_per_freq, bins[1:]
         
         
-    def analyze(self, data, stim, stim_type,
-            wave=False, interpolation_factor=1,
-            post_rheo_steps=-1, max_spikes_per_step=-1):
+    def analyze(self, data, stim, stim_type, wave=False, interpolation_factor=1,
+        post_rheo_steps=-1, max_spikes_per_step=-1):
         """
-        Unified feature extraction.
-        
+        Unified feature extraction function for different stimulation protocols.
+    
+        Parameters
+        ----------
+        data : array
+            Voltage trace from a single trial.
+        stim : array
+            Stimulation current trace.
+        stim_type : str
+            Type of stimulation protocol: 'io', 'rh', 'sch', or 'ch'.
+        wave : bool, optional
+            If True, extract spike waveforms (for 'io' only).
+        interpolation_factor : int
+            Interpolation factor for spike waveform (used if wave=True).
+        post_rheo_steps : int
+            Number of IO steps to analyze post-rheobase (default: -1 = all).
+        max_spikes_per_step : int
+            Max spikes per step to include in waveform (default: -1 = all).
+    
         Returns
         -------
-        metrics : dict
-            Keys/arrays depend on stim_type and wave.
+        dict
+            Output depends on protocol:
+            - 'io': spike frequency, input resistance, RMP, or waveform.
+            - 'rh': rheobase.
+            - 'sch': spike count per freq bin.
+            - 'ch': impedance and peak power.
         """
         
         if stim_type == 'io':
+            # Parse IO steps and detect spikes
             sig, amps, dur = self.parse_io(data, stim)
             locs = self.spike_locs(sig)
+            
+            # Return IO waveforms only
             if wave:
                 wf, a2, t2 = self.select_waveforms(
                     sig, amps, locs,
                     interpolation_factor, post_rheo_steps, max_spikes_per_step
                 )
                 return {'mV': wf, 'amp': a2, 'time': t2}
-        
+            
+            # Otherwise return IO metrics
             counts = np.array(self.count_spikes(locs))
             freqs = counts / (dur / self.fs)
             rin  = self.get_input_resistance(sig, amps, counts)
@@ -467,65 +504,150 @@ class Iclamp:
                 'rmp': [rmp] * len(freqs)
             }
         
+        # Get first location of first spike
         if stim_type == 'rh':
             return {'rheobase': [self.get_rheobase(data, stim)]}
         
+        # Get chirp power freq range (2-59 Hz)
+        if stim_type == 'ch':
+            Z, P, f0 = self.get_chirp(data, stim, freq_range=(2,59))
+            return {'impedance': Z, 'peak_power': P, 'freq': f0}
+        
+                
         if stim_type == 'sch':
             cnt, fr = self.get_spike_transfer(data, stim)
             return {'spike_count': cnt, 'freq': fr}
         
-        if stim_type == 'ch':
-            Z, P, f0 = self.get_chirp(data, stim)
-            return {'impedance': Z, 'peak_power': P, 'freq': f0}
-        
         return {}
         
-    def save_validation_plot(self, data, stim, stim_type, save_path):
+    def save_validation_plot(self, data, stim, stim_type, save_path, wave=False,
+                             post_rheo_steps=-1, max_spikes_per_step=-1):
         """
-        Generate & save a protocol‐specific validation figure.
-        
+        Create and save a diagnostic plot of voltage and stimulus activity based on the stimulation protocol.
+    
+        Parameters
+        ----------
+        data : array
+            Voltage signal (Vm).
+        stim : array
+            Stimulus signal (usually in pA).
+        stim_type : str
+            Type of stimulation protocol: 'io', 'rh', 'sch', or 'ch'.
+        save_path : str
+            Path to save the resulting plot.
+        wave : bool
+            If True and stim_type is 'io', highlights only selected spike waveforms.
+        post_rheo_steps : int
+            Number of IO steps post-rheobase to include when wave=True.
+        max_spikes_per_step : int
+            Max number of spikes per IO step to highlight when wave=True.
+    
         Returns
         -------
         fig : matplotlib.figure.Figure
+            The generated matplotlib figure (also saved to disk).
         """
-        fig, ax = plt.subplots(figsize=(30, 15))
-        t = np.arange(len(data)) / self.fs
-        
+        t = np.arange(len(data)) / self.fs  # time axis in seconds
+    
         if stim_type == 'io':
-            sig, _, _ = self.parse_io(data, stim)
+            # --- IO protocol: stack traces by step and mark spikes ---
+            fig, ax = plt.subplots(figsize=(30, 15))
+            sig, amps, dur = self.parse_io(data, stim)
             locs = self.spike_locs(sig)
-            for i, s in enumerate(sig):
-                offset = i * 10
-                ax.plot(np.arange(len(s)) / self.fs, s + offset, 'k-', alpha=0.7)
-                ax.plot(locs[i] / self.fs, s[locs[i]] + offset, 'rx', ms=20)
-            ax.set_title("IO spikes (stacked steps)")
-        
-        elif stim_type == 'rh':
-            ax.plot(t, data, 'k-')
-            r0 = self.get_rheobase(data, stim)
-            if r0 is not None:
-                # first spike index
-                idx = np.argmax(data > (np.median(data) + self.prominence))
-                ax.axvline(idx / self.fs, color='r', ls='--')
-            ax.set_title("Rheobase spike")
-        
-        elif stim_type == 'sch':
-            peaks, _ = find_peaks(data, prominence=self.prominence, distance=self.dist)
-            ax.plot(t, data, 'k-')
-            ax.plot(peaks / self.fs, data[peaks], 'rx', ms=20)
-            ax.set_title("Short‐chirp spikes")
-        
-        elif stim_type == 'ch':
-            ax.plot(t, data, 'k-', label='Vm')
-            stim_scaled = stim / np.max(np.abs(stim)) * np.ptp(data) + np.median(data)
-            ax.plot(t, stim_scaled-10, 'b-', alpha=0.5, label='Stim')
-            ax.set_title("Chirp raw + stim")
-        
-        ax.set_xlabel("Time (s)")
-        ax.set_ylabel("Voltage (mV)")
-        ax.legend(loc='upper right')
+    
+            if wave:
+                # Show only post-rheobase steps with selected spikes
+                selected_idxs = []
+                count = 0
+                for i, l in enumerate(locs):
+                    if count == post_rheo_steps:
+                        break
+                    if len(l) > 0:
+                        selected_idxs.append(i)
+                        count += 1
+    
+                for i in selected_idxs:
+                    offset = i * 10
+                    ax.plot(np.arange(len(sig[i])) / self.fs, sig[i] + offset, 'k-', alpha=0.7)
+                    for j, loc in enumerate(locs[i]):
+                        if max_spikes_per_step != -1 and j >= max_spikes_per_step:
+                            break
+                        ax.plot(loc / self.fs, sig[i][loc] + offset, 'rx', ms=20)
+                ax.set_title("IO spikes (selected steps only)")
+            else:
+                # Plot all IO steps and all spikes
+                for i, s in enumerate(sig):
+                    offset = i * 10
+                    ax.plot(np.arange(len(s)) / self.fs, s + offset, 'k-', alpha=0.7)
+                    ax.plot(locs[i] / self.fs, s[locs[i]] + offset, 'rx', ms=20)
+                ax.set_title("IO spikes (stacked steps)")
+    
+            ax.set_xlabel("Time (s)")
+            ax.set_ylabel("Voltage (mV)")
+            ax.legend(loc='upper right')
+    
+        else:
+            # --- For 'rh', 'ch', 'sch': use dual-panel layout ---
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(30, 15), sharex=True, height_ratios=[3, 1])
+    
+            if stim_type == 'rh':
+                # Rheobase: plot spike and stimulus
+                ax1.plot(t, data, 'k-')
+                r0 = self.get_rheobase(data, stim)
+                if r0 is not None:
+                    idx = np.argmax(data > (np.median(data) + self.prominence))
+                    ax1.axvline(idx / self.fs, color='r', ls='--')
+                ax1.set_title("Rheobase spike")
+                ax1.set_ylabel("Voltage (mV)")
+    
+                ax2.plot(t, stim, 'b-', alpha=0.7)
+                ax2.set_ylabel("Stimulus (pA)")
+                ax2.set_xlabel("Time (s)")
+                ax2.set_title("Stimulus")
+    
+            elif stim_type == 'ch':
+                # Chirp: show voltage and stimulus with frequency range
+                ax1.plot(t, data, 'k-', label='Vm')
+                _, _, f = self.get_chirp(data, stim)
+                fmin, fmax = np.round(np.min(f), 1), np.round(np.max(f), 1)
+                ax1.set_title(f"Chirp Protocol - Membrane Voltage (Freq range: {fmin}-{fmax} Hz)")
+                ax1.set_ylabel("Voltage (mV)")
+                ax1.legend(loc='upper right')
+    
+                ax2.plot(t, stim, 'b-', alpha=0.7)
+                ax2.set_ylabel("Stimulus (pA)")
+                ax2.set_xlabel("Time (s)")
+                ax2.set_title("Chirp Protocol - Stimulus")
+    
+            elif stim_type == 'sch':
+                # Short Chirp: plot spikes and stimulus frequency over time
+                peaks, _ = find_peaks(data, prominence=self.prominence, distance=self.dist)
+    
+                # --- Top: Voltage trace with spikes ---
+                ax1.plot(t, data, 'k-', label='Vm')
+                ax1.plot(peaks / self.fs, data[peaks], 'rx', ms=10)
+                for p in peaks:
+                    ax1.axvline(p / self.fs, color='r', ls='--', lw=1, alpha=0.4)
+                ax1.set_title("Short-chirp spikes")
+                ax1.set_ylabel("Voltage (mV)")
+    
+                # --- Bottom: Stim frequency over time ---
+                _, _, max_freqs = self.get_spike_transfer(data, stim, return_frequencies_per_time=True)
+    
+                # Interpolate frequency to full time resolution
+                stim_freq = np.linspace(np.min(max_freqs), np.max(max_freqs), len(t))
+                ax2.plot(t, stim_freq, 'k-', linewidth=2, label='Stim Freq')
+    
+                # Add vertical lines for spike timing
+                for p in peaks:
+                    ax2.axvline(p / self.fs, color='r', ls='--', lw=2, alpha=0.4)
+    
+                ax2.set_ylabel("Frequency (Hz)")
+                ax2.set_xlabel("Time (s)")
+                ax2.set_title("Stimulus frequency (interpolated)")
+    
         plt.tight_layout()
         fig.savefig(save_path)
         plt.close(fig)
         return fig
-        
+    
