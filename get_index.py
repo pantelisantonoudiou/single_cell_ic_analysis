@@ -188,7 +188,7 @@ class StimEventIndexer:
 
 if __name__ == '__main__':
     # ================= USER SETTINGS =================
-    main_path  = r"R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys"   # Root path for data
+    main_path  = r"R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys\full_dataset"   # Root path for data
     stim_types = ['io', 'rh', 'ch', 'sch']                                 # Stimulation protocols
     data_ch    = 0                                                         # Voltage channel index
     stim_ch    = 1                                                         # Stimulus/current channel index
