@@ -124,8 +124,8 @@ def group_comparison_plot(data, group_column, dependent_variables, n_cols=3, pal
         # Plot barplots for each variable and add stars
         for i, (var, adj_p_value) in enumerate(zip(dependent_variables, adjusted_p_values)):
             temp_data = long_data[long_data['variable'] == var]
-            sns.stripplot(data=temp_data, x=group_column, y='value', ax=axs[i], hue=group_column, palette=palette,legend=False)
-            sns.barplot(data=temp_data, x=group_column, y='value', ax=axs[i], errorbar='se', alpha=.5, palette=palette)
+            sns.stripplot(data=temp_data, x=group_column, y='value', ax=axs[i], hue=group_column, palette=palette, legend=False)
+            sns.barplot(data=temp_data, x=group_column, y='value', ax=axs[i], errorbar='se', alpha=.5, palette=palette, hue=group_column, legend=False)
             axs[i].spines['top'].set_visible(False)
             axs[i].spines['right'].set_visible(False)
             axs[i].set_title(f"{var} ({stars(adj_p_value)})")
