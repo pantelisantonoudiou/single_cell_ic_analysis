@@ -9,7 +9,7 @@ from io_secondary_properties import (
 )
 
 # ================= USER CONFIGURATION =================
-main_path    = r'R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys\analyzed'
+main_path    = r'R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys\full_dataset\analyzed'
 stim_type    = 'io'
 group_cols   = ['treatment', 'cell_id']
 # =====================================================
