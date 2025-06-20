@@ -13,7 +13,7 @@ sns.set(style="whitegrid", font_scale=1.5)
 # =============================================================================
 
 # ==== CONFIG ====
-main_path = r'R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys\analyzed'
+main_path = r'R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys\full_dataset\analyzed'
 stim_types = ['rh', 'ch', 'sch']
 file_paths = {stim: os.path.join(main_path, stim, 'features.csv') for stim in stim_types}
 
