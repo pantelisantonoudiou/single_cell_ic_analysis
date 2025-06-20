@@ -263,10 +263,10 @@ class BatchProcess:
 
 if __name__ == '__main__':
     # === USER SETTINGS ===
-    main_path   = r"R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys"
+    main_path   = r"R:\Pantelis\for analysis\patch_data_jamie\TRAP Ephys\full_dataset"
     index_csv   = os.path.join(main_path, "index.csv")
     analyzed_dir = os.path.join(main_path, 'analyzed')
-    stim_types  = ['sch', 'rh', 'ch', 'sch'] #'io', 'rh', 'ch', 'sch'
+    stim_types  = ['io', 'rh', 'ch', 'sch'] #'io', 'rh', 'ch', 'sch'
     njobs       = 1
     # =====================
 
