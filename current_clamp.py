@@ -430,7 +430,7 @@ class Iclamp:
         fmax = np.max(max_power_freqs)
         
         if fmax > max_freq:
-            print('Warning exceeded max freq')
+            print('Warning exceeded max freq. Make sure comment onset and offset are correct.')
             print(max_power_freqs)
         
         # get spike locations
