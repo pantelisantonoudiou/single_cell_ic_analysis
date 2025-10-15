@@ -14,7 +14,7 @@ class Iclamp:
     Detect and calculate spike properties for different current clamp stimulation protocols.
     """
     
-    def __init__(self, fs, dist=1, spike_select=[2, 3], prominence=40, wlen=.1):
+    def __init__(self, fs, dist=1, spike_select=[2, 3], prominence=40, wlen=.1, max_width_ms=5):
         """
         Parameters
         ----------
@@ -22,7 +22,8 @@ class Iclamp:
         dist : float, find peaks distance (ms)
         spike_select : float, type to get before and after spike location (ms)
         prominence : float, spike threshold from neighbour (mV)
-        wlen : percentage of fs samples for prominence detection 
+        wlen : percentage of fs samples for prominence detection
+        max_width_ms : float, maximum spike width (ms)
         """
         
         self.fs = fs
@@ -30,6 +31,7 @@ class Iclamp:
         self.spike_select = np.array(np.array(spike_select)*fs/1000, dtype=int)
         self.prominence = prominence
         self.wlen = int(fs*wlen)
+        self.max_width_ms = max_width_ms
             
     def get_stim_times_io(self, stim, threshold=2):
         """
@@ -434,7 +436,8 @@ class Iclamp:
             print(max_power_freqs)
         
         # get spike locations
-        spike_locs, _ = find_peaks(data, prominence=self.prominence, distance=self.fs*self.dist/1000)
+        spike_locs, _ = find_peaks(data, prominence=self.prominence, distance=self.fs*self.dist/1000,
+                                   width=(None, self.max_width_ms/1000*self.fs) )
 
         # get spikes per frequency
         bins = np.arange(fmin, fmax+1, freq_per_sec)
@@ -621,7 +624,8 @@ class Iclamp:
     
             elif stim_type == 'sch':
                 # Short Chirp: plot spikes and stimulus frequency over time
-                peaks, _ = find_peaks(data, prominence=self.prominence, distance=self.dist)
+                peaks, _ = find_peaks(data, prominence=self.prominence, distance=self.dist,
+                                      width=(None, self.max_width_ms/1000*self.fs))
     
                 # --- Top: Voltage trace with spikes ---
                 ax1.plot(t, data, 'k-', label='Vm')

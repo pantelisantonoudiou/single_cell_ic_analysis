@@ -69,7 +69,7 @@ def load_adi_data(file_path, block, start_sample, stop_sample, data_ch, stim_ch,
     start = max(1, int(start_sample))
     stop = None if pd.isna(stop_sample) else int(stop_sample)
 
-    raw_data = ch_data.get_data(block + 1, start_sample=start, stop_sample=stop)
+    raw_data = ch_data.get_data(block + 1, start_sample=start, stop_sample=stop) * data_correction
     stim = ch_stim.get_data(block + 1, start_sample=start, stop_sample=stop) * stim_correction
 
     return raw_data, stim, fs
@@ -98,7 +98,7 @@ class BatchProcess:
     Batch‐analysis of current clamp data via Iclamp.analyze + save_validation_plot.
     """
 
-    def __init__(self, main_path, index_df,
+    def __init__(self, main_path, index_df, data_correction=1.0,
                  njobs=1, stim_correction=1000, prominence=30):
         """
         main_path : str
@@ -108,13 +108,16 @@ class BatchProcess:
                            'start_sample','stop_sample','data_ch','stim_ch'].
         njobs : int
             Parallel workers.
+        data_correction : float
+            Scale ADI data channel.
         stim_correction : float
             Scale ADI stim channel.
         prominence : float
             Spike detection threshold.
         """
-        self.main_path      = main_path
+        self.main_path       = main_path
         self.index           = index_df.copy().reset_index(drop=True) # get unique IDs
+        self.data_correction = data_correction
         self.stim_correction = stim_correction
         self.prominence      = prominence
 
@@ -134,6 +137,7 @@ class BatchProcess:
             stop_sample=row.stop_sample,
             data_ch=row.data_ch,
             stim_ch=row.stim_ch,
+            data_correction=self.data_correction,
             stim_correction=self.stim_correction
         )
 
